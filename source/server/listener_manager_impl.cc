@@ -115,17 +115,55 @@ bool ListenerImpl::createFilterChain(Network::Connection& connection) {
   return Configuration::FilterChainUtility::buildFilterChain(connection, filter_factories_);
 }
 
-void ListenerManagerImpl::addListener(const Json::Object& json) {
-  listeners_.emplace_back(new ListenerImpl(server_, factory_, json));
+Init::Manager& ListenerImpl::initManager() {
+  // fixfix comment
+  if (post_init_mode_) {
+    return dynamic_init_manager_;
+  } else {
+    return server_.initManager();
+  }
 }
 
-std::list<std::reference_wrapper<Listener>> ListenerManagerImpl::listeners() {
-  std::list<std::reference_wrapper<Listener>> ret;
-  for (const auto& listener : listeners_) {
-    ret.emplace_back(*listener);
-  }
-  return ret;
+void ListenerImpl::setSocket(Network::ListenSocketPtr&& socket) {
+  ASSERT(!socket_);
+  socket_ = std::move(socket);
 }
+
+void ListenerManagerImpl::addOrUpdateListener(const Json::Object& json) {
+  // fixfix socket fetching logic.
+  // fixfix logging.
+  // fixfix stats.
+  std::shared_ptr<ListenerImpl> new_listener =
+      std::make_shared<ListenerImpl>(json, server_, post_init_mode_);
+  auto existing_active_listener = getListenerByName(active_listeners_, new_listener->name());
+  auto existing_warming_listener = getListenerByName(warming_listeners_, new_listener->name());
+
+  ASSERT(existing_active_listener == active_listeners_.end());
+  ASSERT(existing_warming_listener == warming_listeners_.end());
+
+  // fixfix name already exists.
+  // fixfix should not be in warming.
+  new_listener->setSocket(factory_.createListenSocket(new_listener->address(), new_listener->bindToPort()));
+  active_listeners_.emplace_back(new_listener);
+}
+
+void ListenerManagerImpl::enterPostInitMode(ListenerManagerCallbacks&) {
+  ASSERT(!post_init_mode_);
+  post_init_mode_ = true;
+}
+
+std::list<ListenerSharedPtr>::iterator
+ListenerManagerImpl::getListenerByName(std::list<ListenerSharedPtr>& listeners,
+                                       const std::string& name) {
+  for (auto it = listeners.begin(); it != listeners.end(); ++it) {
+    if ((*it)->name() == name) {
+      return it;
+    }
+  }
+  return listeners.end();
+}
+
+void ListenerManagerImpl::removeListener(const std::string&) {}
 
 } // Server
 } // Envoy
