@@ -18,7 +18,7 @@ namespace Server {
 class ListenerManagerImplTest : public testing::Test {
 public:
   NiceMock<MockInstance> server_;
-  MockListenSocketFactory factory_;
+  MockListenerComponentFactory factory_;
   ListenerManagerImpl manager_{server_, factory_};
 };
 
@@ -31,7 +31,7 @@ TEST_F(ListenerManagerImplTest, EmptyFilter) {
   )EOF";
 
   Json::ObjectSharedPtr loader = Json::Factory::loadFromString(json);
-  EXPECT_CALL(factory_, create_(_, true));
+  EXPECT_CALL(factory_, createListenSocket_(_, true));
   manager_.addListener(*loader);
   EXPECT_EQ(1U, manager_.listeners().size());
 }
@@ -45,7 +45,7 @@ TEST_F(ListenerManagerImplTest, DefaultListenerPerConnectionBufferLimit) {
   )EOF";
 
   Json::ObjectSharedPtr loader = Json::Factory::loadFromString(json);
-  EXPECT_CALL(factory_, create_(_, true));
+  EXPECT_CALL(factory_, createListenSocket_(_, true));
   manager_.addListener(*loader);
   EXPECT_EQ(1024 * 1024U, manager_.listeners().back().get().perConnectionBufferLimitBytes());
 }
@@ -60,7 +60,7 @@ TEST_F(ListenerManagerImplTest, SetListenerPerConnectionBufferLimit) {
   )EOF";
 
   Json::ObjectSharedPtr loader = Json::Factory::loadFromString(json);
-  EXPECT_CALL(factory_, create_(_, true));
+  EXPECT_CALL(factory_, createListenSocket_(_, true));
   manager_.addListener(*loader);
   EXPECT_EQ(8192U, manager_.listeners().back().get().perConnectionBufferLimitBytes());
 }
@@ -82,7 +82,7 @@ TEST_F(ListenerManagerImplTest, SslContext) {
   )EOF";
 
   Json::ObjectSharedPtr loader = TestEnvironment::jsonLoadFromString(json);
-  EXPECT_CALL(factory_, create_(_, true));
+  EXPECT_CALL(factory_, createListenSocket_(_, true));
   manager_.addListener(*loader);
   EXPECT_NE(nullptr, manager_.listeners().back().get().sslContext());
 }
@@ -189,7 +189,7 @@ TEST_F(ListenerManagerImplTest, StatsScopeTest) {
   )EOF";
 
   Json::ObjectSharedPtr loader = Json::Factory::loadFromString(json);
-  EXPECT_CALL(factory_, create_(_, false));
+  EXPECT_CALL(factory_, createListenSocket_(_, false));
   manager_.addListener(*loader);
   manager_.listeners().front().get().listenerScope().counter("foo").inc();
 
@@ -234,7 +234,7 @@ TEST_F(ListenerManagerImplTest, DeprecatedFilterConfigFactoryRegistrationTest) {
   )EOF";
 
   Json::ObjectSharedPtr loader = Json::Factory::loadFromString(json);
-  EXPECT_CALL(factory_, create_(_, true));
+  EXPECT_CALL(factory_, createListenSocket_(_, true));
   manager_.addListener(*loader);
 }
 

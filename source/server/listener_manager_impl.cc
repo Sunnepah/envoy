@@ -13,48 +13,9 @@
 namespace Envoy {
 namespace Server {
 
-Network::ListenSocketPtr
-ProdListenSocketFactory::create(Network::Address::InstanceConstSharedPtr address,
-                                bool bind_to_port) {
-  // For each listener config we share a single TcpListenSocket among all threaded listeners.
-  // UdsListenerSockets are not managed and do not participate in hot restart as they are only
-  // used for testing. First we try to get the socket from our parent if applicable.
-  ASSERT(address->type() == Network::Address::Type::Ip);
-  std::string addr = fmt::format("tcp://{}", address->asString());
-  const int fd = restarter_.duplicateParentListenSocket(addr);
-  if (fd != -1) {
-    ENVOY_LOG(info, "obtained socket for address {} from parent", addr);
-    return Network::ListenSocketPtr{new Network::TcpListenSocket(fd, address)};
-  } else {
-    return Network::ListenSocketPtr{new Network::TcpListenSocket(address, bind_to_port)};
-  }
-}
-
-ListenerImpl::ListenerImpl(Instance& server, ListenSocketFactory& factory, const Json::Object& json)
-    : Json::Validator(json, Json::Schema::LISTENER_SCHEMA), server_(server),
-      address_(Network::Utility::resolveUrl(json.getString("address"))),
-      global_scope_(server.stats().createScope("")),
-      bind_to_port_(json.getBoolean("bind_to_port", true)),
-      use_proxy_proto_(json.getBoolean("use_proxy_proto", false)),
-      use_original_dst_(json.getBoolean("use_original_dst", false)),
-      per_connection_buffer_limit_bytes_(
-          json.getInteger("per_connection_buffer_limit_bytes", 1024 * 1024)) {
-
-  // ':' is a reserved char in statsd. Do the translation here to avoid costly inline translations
-  // later.
-  std::string final_stat_name = fmt::format("listener.{}.", address_->asString());
-  std::replace(final_stat_name.begin(), final_stat_name.end(), ':', '_');
-
-  listener_scope_ = server.stats().createScope(final_stat_name);
-  ENVOY_LOG(info, "  address={}", address_->asString());
-
-  if (json.hasObject("ssl_context")) {
-    Ssl::ContextConfigImpl context_config(*json.getObject("ssl_context"));
-    ssl_context_ =
-        server.sslContextManager().createSslServerContext(*listener_scope_, context_config);
-  }
-
-  std::vector<Json::ObjectSharedPtr> filters = json.getObjectArray("filters");
+std::list<Configuration::NetworkFilterFactoryCb>
+ProdListenerComponentFactory::createFilterFactoryList(
+    const std::vector<Json::ObjectSharedPtr>& filters) {
   for (size_t i = 0; i < filters.size(); i++) {
     std::string string_type = filters[i]->getString("type");
     std::string string_name = filters[i]->getString("name");
@@ -102,8 +63,52 @@ ListenerImpl::ListenerImpl(Instance& server, ListenSocketFactory& factory, const
       }
     }
   }
+}
 
-  socket_ = factory.create(address_, bind_to_port_);
+Network::ListenSocketPtr
+ProdListenerComponentFactory::createListenSocket(Network::Address::InstanceConstSharedPtr address,
+                                                 bool bind_to_port) {
+  // For each listener config we share a single TcpListenSocket among all threaded listeners.
+  // UdsListenerSockets are not managed and do not participate in hot restart as they are only
+  // used for testing. First we try to get the socket from our parent if applicable.
+  ASSERT(address->type() == Network::Address::Type::Ip);
+  std::string addr = fmt::format("tcp://{}", address->asString());
+  const int fd = restarter_.duplicateParentListenSocket(addr);
+  if (fd != -1) {
+    ENVOY_LOG(info, "obtained socket for address {} from parent", addr);
+    return Network::ListenSocketPtr{new Network::TcpListenSocket(fd, address)};
+  } else {
+    return Network::ListenSocketPtr{new Network::TcpListenSocket(address, bind_to_port)};
+  }
+}
+
+ListenerImpl::ListenerImpl(Instance& server, ListenerComponentFactory& factory,
+                           const Json::Object& json)
+    : Json::Validator(json, Json::Schema::LISTENER_SCHEMA), server_(server),
+      address_(Network::Utility::resolveUrl(json.getString("address"))),
+      global_scope_(server.stats().createScope("")),
+      bind_to_port_(json.getBoolean("bind_to_port", true)),
+      use_proxy_proto_(json.getBoolean("use_proxy_proto", false)),
+      use_original_dst_(json.getBoolean("use_original_dst", false)),
+      per_connection_buffer_limit_bytes_(
+          json.getInteger("per_connection_buffer_limit_bytes", 1024 * 1024)) {
+
+  // ':' is a reserved char in statsd. Do the translation here to avoid costly inline translations
+  // later.
+  std::string final_stat_name = fmt::format("listener.{}.", address_->asString());
+  std::replace(final_stat_name.begin(), final_stat_name.end(), ':', '_');
+
+  listener_scope_ = server.stats().createScope(final_stat_name);
+  ENVOY_LOG(info, "  address={}", address_->asString());
+
+  if (json.hasObject("ssl_context")) {
+    Ssl::ContextConfigImpl context_config(*json.getObject("ssl_context"));
+    ssl_context_ =
+        server.sslContextManager().createSslServerContext(*listener_scope_, context_config);
+  }
+
+  filter_factories_ = factory.createFilterFactoryList(json.getObjectArray("filters"));
+  socket_ = factory.createListenSocket(address_, bind_to_port_);
 }
 
 bool ListenerImpl::createFilterChain(Network::Connection& connection) {

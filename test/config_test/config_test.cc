@@ -55,8 +55,8 @@ public:
   NiceMock<Ssl::MockContextManager> ssl_context_manager_;
   Server::TestOptionsImpl options_;
   Upstream::ProdClusterManagerFactory cluster_manager_factory_;
-  NiceMock<Server::MockListenSocketFactory> socket_factory_;
-  Server::ListenerManagerImpl listener_manager_{server_, socket_factory_};
+  NiceMock<Server::MockListenerComponentFactory> component_factory_;
+  Server::ListenerManagerImpl listener_manager_{server_, component_factory_};
 };
 
 uint32_t run(const std::string& directory) {

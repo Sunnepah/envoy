@@ -1,6 +1,7 @@
 #pragma once
 
 #include "envoy/server/filter_config.h"
+#include "envoy/server/instance.h"
 #include "envoy/server/listener_manager.h"
 
 #include "common/common/logger.h"
@@ -11,15 +12,18 @@ namespace Server {
 
 /**
  * Prod implementation of ListenSocketFactory that creates real sockets and attempts to fetch
- * sockets from the parent process via the hot restarter.
+ * sockets from the parent process via the hot restarter. fixfix
  */
-class ProdListenSocketFactory : public ListenSocketFactory, Logger::Loggable<Logger::Id::config> {
+class ProdListenerComponentFactory : public ListenerComponentFactory,
+                                     Logger::Loggable<Logger::Id::config> {
 public:
-  ProdListenSocketFactory(HotRestart& restarter) : restarter_(restarter) {}
+  ProdListenerComponentFactory(HotRestart& restarter) : restarter_(restarter) {}
 
   // Server::ListenSocketFactory
-  Network::ListenSocketPtr create(Network::Address::InstanceConstSharedPtr address,
-                                  bool bind_to_port) override;
+  std::list<Configuration::NetworkFilterFactoryCb>
+  createFilterFactoryList(const std::vector<Json::ObjectSharedPtr>& filters) override;
+  Network::ListenSocketPtr createListenSocket(Network::Address::InstanceConstSharedPtr address,
+                                              bool bind_to_port) override;
 
 private:
   HotRestart& restarter_;
@@ -34,7 +38,7 @@ class ListenerImpl : public Listener,
                      Json::Validator,
                      Logger::Loggable<Logger::Id::config> {
 public:
-  ListenerImpl(Instance& server, ListenSocketFactory& factory, const Json::Object& json);
+  ListenerImpl(Instance& server, ListenerComponentFactory& factory, const Json::Object& json);
 
   // Server::Listener
   Network::FilterChainFactory& filterChainFactory() override { return *this; }
@@ -88,7 +92,7 @@ private:
  */
 class ListenerManagerImpl : public ListenerManager {
 public:
-  ListenerManagerImpl(Instance& server, ListenSocketFactory& factory)
+  ListenerManagerImpl(Instance& server, ListenerComponentFactory& factory)
       : server_(server), factory_(factory) {}
 
   // Server::ListenerManager
@@ -97,7 +101,7 @@ public:
 
 private:
   Instance& server_;
-  ListenSocketFactory& factory_;
+  ListenerComponentFactory& factory_;
   std::list<ListenerPtr> listeners_;
 };
 
